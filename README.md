@@ -4,9 +4,9 @@ An asynchronous network enumeration tool written in Rust, designed for high perf
 
 ---
 
-## Architecture: v2 Design Commitments
+## Architecture
 
-This tool implements the **v2 architecture** where the Rust engine serves as the core "brain". The native scanning layer executes high-speed async discovery and connect scans first. It then **optionally delegates to Nmap** for deep enrichment (`-sV` version signatures, `-O` OS detection, and target-selective NSE scripts) only on open ports, parsing the results from Nmap's XML output and merging them back into the native data model. 
+This tool implements the architecture where the Rust engine serves as the core "brain". The native scanning layer executes async discovery and connect scans first. It then **optionally delegates to Nmap** for deep enrichment (`-sV` version signatures, `-O` OS detection, and target-selective NSE scripts) only on open ports, parsing the results from Nmap's XML output and merging them back into the native data model. 
 
 When Nmap is not installed or when `--no-nmap` is passed, the tool **gracefully degrades** to native-only mode without breaking.
 
