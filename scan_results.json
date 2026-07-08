@@ -1,0 +1,35 @@
+{
+  "targets_scanned": 2,
+  "hosts_up": 2,
+  "duration_ms": 0,
+  "hosts": [
+    {
+      "ip": "127.0.0.1",
+      "status": "up",
+      "ports": [
+        {
+          "port": 22,
+          "status": "closed"
+        },
+        {
+          "port": 80,
+          "status": "closed"
+        }
+      ]
+    },
+    {
+      "ip": "::1",
+      "status": "up",
+      "ports": [
+        {
+          "port": 22,
+          "status": "closed"
+        },
+        {
+          "port": 80,
+          "status": "closed"
+        }
+      ]
+    }
+  ]
+}

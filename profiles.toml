@@ -1,0 +1,23 @@
+[profiles.quick]
+concurrency = 1500
+timeout_ms = 800
+
+[profiles.quick.discovery]
+ping = true
+tcp_ports = [80, 443]
+
+[profiles.stealth]
+concurrency = 50
+timeout_ms = 2000
+
+[profiles.stealth.discovery]
+ping = false
+tcp_ports = [22]
+
+[profiles.thorough]
+concurrency = 800
+timeout_ms = 1500
+
+[profiles.thorough.discovery]
+ping = true
+tcp_ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 2379, 8080]
