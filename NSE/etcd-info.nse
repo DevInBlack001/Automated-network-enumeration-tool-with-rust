@@ -65,7 +65,7 @@ and a search of https://nmap.org/nsedoc/ .
 -- <elem key="unauthenticated_access">true</elem>
 ---
 
-author = "AB"  -- replace with your name for submission
+author = "AB"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "safe", "version"}
 
