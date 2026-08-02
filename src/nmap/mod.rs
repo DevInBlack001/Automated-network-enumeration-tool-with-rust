@@ -122,9 +122,15 @@ impl NmapEnricher {
                                     port_res.service = Some(name.clone());
                                 }
 
-                                // Construct version banner
-                                let mut banner = String::new();
+                                // Construct version banner, extending any banner a native
+                                // Lua plugin already wrote for this port rather than
+                                // discarding it.
+                                let mut banner = port_res.banner.take().unwrap_or_default();
+                                let had_existing_banner = !banner.is_empty();
                                 if let Some(product) = service.product.as_ref() {
+                                    if had_existing_banner {
+                                        banner.push_str(" | ");
+                                    }
                                     banner.push_str(product);
                                 }
                                 if let Some(version) = service.version.as_ref() {
