@@ -3,7 +3,7 @@
 
 -- Define which ports this script runs on
 function applies_to(port)
-    return port == 21 or port == 22 or port == 25 or port == 80 or port == 110 or port == 143 or port == 111 port == 443
+    return port == 21 or port == 22 or port == 25 or port == 80 or port == 110 or port == 143 or port == 111 or port == 443
 end
 
 -- Execute banner grab
