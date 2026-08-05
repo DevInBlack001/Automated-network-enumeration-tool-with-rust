@@ -105,6 +105,7 @@ pub async fn run_scan(
             ip,
             status,
             ports: ports_list,
+            os: None,
         });
     }
     

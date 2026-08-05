@@ -24,6 +24,8 @@ function run(host, port)
             return "HTTP Title: '" .. title .. "'"
         end
     end
-    
-    return "HTTP Status: " .. res.status
+
+    -- No title found; the HTTP status line is already captured by netenum's
+    -- native banner grab, so don't restate it here.
+    return nil, "no title found"
 end

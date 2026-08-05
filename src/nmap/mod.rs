@@ -117,6 +117,16 @@ impl NmapEnricher {
 
             // Find host in our summary
             if let Some(host_res) = summary.hosts.iter_mut().find(|h| h.ip == host_ip) {
+                // Extract OS fingerprint summary: take the highest-accuracy match.
+                if let Some(os) = parsed_host.os.as_ref() {
+                    if let Some(best) = os.matches.iter().max_by_key(|m| m.accuracy) {
+                        host_res.os = Some(crate::model::OsInfo {
+                            name: best.name.clone(),
+                            accuracy: best.accuracy,
+                        });
+                    }
+                }
+
                 if let Some(container) = parsed_host.ports_container {
                     for parsed_port in container.ports {
                         // Find port in our host_res

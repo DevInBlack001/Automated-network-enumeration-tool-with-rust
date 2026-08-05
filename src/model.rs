@@ -48,11 +48,21 @@ pub struct PortResult {
     pub confidence_source: Option<ServiceSource>,
 }
 
+/// Best-guess OS identification for a host, sourced from Nmap's `-O` detection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OsInfo {
+    pub name: String,
+    /// Nmap's own match accuracy, 0-100.
+    pub accuracy: u8,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostResult {
     pub ip: IpAddr,
     pub status: HostStatus,
     pub ports: Vec<PortResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os: Option<OsInfo>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

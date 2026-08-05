@@ -27,6 +27,7 @@ When Nmap is not installed or when `--no-nmap` is passed, the tool **gracefully 
 11. **Generic Native Banner Grabbing & Signature Identification:** Every open TCP port without a banner is probed directly (`src/banner.rs`) — reading whatever the service sends unprompted, or falling back to a generic HTTP/1.0 request — then identified by matching the actual response against distinctive protocol signatures (an `SSH-` prefix, an HTTP status line, an RFB/VNC handshake, etc.), not by port number. No live evidence means no service name is reported; nothing is ever fabricated from a hardcoded port table.
 12. **Native UDP Service Identification:** Every open/ambiguous UDP port is re-probed with real DNS, NTP, and SNMP requests (`src/udp_identify.rs`), tried against *any* port regardless of number, and only confirmed when the response is structurally valid for that protocol (e.g. a DNS reply must echo the transaction ID with the response flag set; an SNMP reply must contain a GetResponse-PDU and echo the community string) — not just "something answered".
 13. **Service/Version Confidence Scoring:** Every identified service carries a `confidence` (0-100) and `confidence_source` — `nmap` (probe/signature match) or `banner` (live content-based signature match) — so you can tell at a glance how the SERVICE label was determined, both in the stdout table and the JSON report.
+14. **OS Fingerprinting Summary:** When Nmap's `-O` detection runs (requires `CAP_NET_RAW`/root), the highest-accuracy OS match is parsed from its XML output and surfaced per host — e.g. `OS: Linux 4.15 - 5.6 (98% accuracy)` — in both stdout and the JSON report.
 
 ---
 
@@ -67,8 +68,7 @@ Network Enumeration Tool/
 │       ├── mod.rs
 │       └── json.rs          # JSON report serializer
 ├── plugins/                 # Custom native Lua scripts/plugins
-│   ├── http-title.lua       # Native HTTP page title grabber
-│   └── banner-grab.lua      # Native TCP connection banner grabber
+│   └── http-title.lua       # Native HTTP page title extractor (raw banner grabbing is now handled natively for every port; see src/banner.rs)
 └── NSE/
     └── etcd-info.nse        # Custom Nmap script targeting unauthenticated etcd
 ```
@@ -211,7 +211,20 @@ PORT      PROTO STATE          SERVICE      CONFIDENCE      VERSION/BANNER
 ```
 `nmap` = Nmap's own probe/signature match confidence; `banner` = identified from live response content via signature matching (e.g. an `SSH-` prefix, an HTTP status line, a validated DNS/NTP/SNMP reply). If a port gives no live evidence at all, it stays `unknown` rather than being labeled from a hardcoded port-number table. The same fields (`confidence`, `confidence_source`) are included in JSON output via `-o`.
 
-### 15. Restrict Scanning to an Approved Scope
+### 15. OS Fingerprinting Summary (Requires Root)
+When Nmap's OS detection runs (needs `CAP_NET_RAW`/root — see example 8 for granting it without `sudo`), the highest-accuracy match is parsed and shown per host:
+```bash
+sudo target/release/netenum 192.168.1.50 -p 22,80,443 --i-have-authorization
+```
+```text
+Results for 192.168.1.50:
+OS: Linux 4.15 - 5.6 (98% accuracy)
+PORT      PROTO STATE          SERVICE      CONFIDENCE      VERSION/BANNER
+22        tcp   open           ssh          70% (nmap)      OpenSSH 9.6
+```
+Without root, Nmap enrichment still runs (service/version detection) but OS detection is skipped, so no `OS:` line appears. The same data is available as `os: { name, accuracy }` on each host in JSON output via `-o`.
+
+### 16. Restrict Scanning to an Approved Scope
 Only scan targets inside the agreed engagement range, even if a broader or unrelated target is passed by mistake; anything outside `--allow` (or inside `--deny`) is skipped with a warning instead of being scanned:
 ```bash
 cargo run -- 10.0.0.0/24 --allow 10.0.0.0/24 --deny 10.0.0.1 --i-have-authorization

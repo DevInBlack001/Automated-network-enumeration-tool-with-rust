@@ -240,6 +240,9 @@ async fn main() {
     for host in &summary.hosts {
         if host.status == model::HostStatus::Up {
             println!("Results for {}:", host.ip);
+            if let Some(os) = &host.os {
+                println!("OS: {} ({}% accuracy)", os.name, os.accuracy);
+            }
             let mut open_ports = 0;
             for port_res in &host.ports {
                 if port_res.status == model::PortStatus::Open || port_res.status == model::PortStatus::OpenFiltered {
