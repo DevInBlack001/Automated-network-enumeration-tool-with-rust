@@ -80,6 +80,7 @@ pub async fn run_scan(
                 banner: None,
                 confidence: None,
                 confidence_source: None,
+                cpe: Vec::new(),
             });
         }
     }

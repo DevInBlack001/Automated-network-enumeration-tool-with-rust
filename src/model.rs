@@ -46,6 +46,11 @@ pub struct PortResult {
     pub confidence: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence_source: Option<ServiceSource>,
+    /// CPE identifiers for the identified service (e.g. "cpe:/a:openbsd:openssh:9.6"),
+    /// sourced from Nmap's `-sV` detection. Empty when Nmap enrichment didn't run
+    /// or didn't produce a CPE match.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cpe: Vec<String>,
 }
 
 /// Best-guess OS identification for a host, sourced from Nmap's `-O` detection.

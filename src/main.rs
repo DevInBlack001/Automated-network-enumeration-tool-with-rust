@@ -261,7 +261,13 @@ async fn main() {
                         (Some(c), Some(model::ServiceSource::NativeBanner)) => format!("{}% (banner)", c),
                         _ => "-".to_string(),
                     };
-                    let banner = port_res.banner.as_deref().unwrap_or("");
+                    let mut banner = port_res.banner.clone().unwrap_or_default();
+                    if !port_res.cpe.is_empty() {
+                        if !banner.is_empty() {
+                            banner.push_str(" | ");
+                        }
+                        banner.push_str(&port_res.cpe.join(", "));
+                    }
                     if banner.is_empty() {
                         println!("{:<9} {:<5} {:<14} {:<12} {:<15}", port_res.port, proto, state, svc, conf);
                     } else {

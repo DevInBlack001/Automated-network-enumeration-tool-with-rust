@@ -142,6 +142,10 @@ impl NmapEnricher {
                                     port_res.confidence_source = Some(crate::model::ServiceSource::NmapProbe);
                                 }
 
+                                if !service.cpe.is_empty() {
+                                    port_res.cpe = service.cpe.clone();
+                                }
+
                                 // Construct version banner, extending any banner a native
                                 // Lua plugin already wrote for this port rather than
                                 // discarding it.

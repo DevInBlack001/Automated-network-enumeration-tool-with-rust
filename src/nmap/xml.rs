@@ -77,6 +77,10 @@ pub struct Service {
     /// Nmap's own match confidence, 0-10.
     #[serde(rename = "@conf")]
     pub conf: Option<u8>,
+    /// CPE identifiers for the matched service (e.g. "cpe:/a:openbsd:openssh:9.6").
+    /// Nmap emits zero, one, or multiple <cpe> children per <service>.
+    #[serde(rename = "cpe", default)]
+    pub cpe: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,7 +103,9 @@ mod tests {
 <ports>
 <port protocol="tcp" portid="22">
 <state state="open"/>
-<service name="ssh" product="OpenSSH" version="9.6" conf="10"/>
+<service name="ssh" product="OpenSSH" version="9.6" conf="10">
+<cpe>cpe:/a:openbsd:openssh:9.6</cpe>
+</service>
 </port>
 </ports>
 <os>
@@ -124,6 +130,24 @@ mod tests {
         let best = os.matches.iter().max_by_key(|m| m.accuracy).unwrap();
         assert_eq!(best.name, "Linux 4.15 - 5.6");
         assert_eq!(best.accuracy, 98);
+    }
+
+    #[test]
+    fn parses_service_cpe() {
+        let run: NmapRun = quick_xml::de::from_str(SAMPLE_XML).expect("valid nmap XML must parse");
+        let container = run.hosts[0].ports_container.as_ref().expect("<ports> must be parsed");
+        let service = container.ports[0].service.as_ref().expect("<service> must be parsed");
+        assert_eq!(service.cpe, vec!["cpe:/a:openbsd:openssh:9.6".to_string()]);
+    }
+
+    #[test]
+    fn missing_cpe_parses_as_empty_vec() {
+        let xml = r#"<nmaprun><host><address addr="10.0.0.1" addrtype="ipv4"/>
+<ports><port protocol="tcp" portid="80"><state state="open"/><service name="http"/></port></ports>
+</host></nmaprun>"#;
+        let run: NmapRun = quick_xml::de::from_str(xml).expect("valid nmap XML must parse");
+        let container = run.hosts[0].ports_container.as_ref().unwrap();
+        assert!(container.ports[0].service.as_ref().unwrap().cpe.is_empty());
     }
 
     #[test]
