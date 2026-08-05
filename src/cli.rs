@@ -44,8 +44,12 @@ pub struct Cli {
     pub no_nmap: bool,
 
     /// Use native SYN scan (requires CAP_NET_RAW / root privileges)
-    #[arg(long = "syn")]
+    #[arg(long = "syn", conflicts_with = "udp")]
     pub syn: bool,
+
+    /// Scan via UDP datagrams instead of TCP (mutually exclusive with --syn)
+    #[arg(long = "udp", conflicts_with = "syn")]
+    pub udp: bool,
 
     /// Path to custom NSE directory. Defaults to "./NSE"
     #[arg(long = "custom-nse-dir", default_value = "./NSE")]

@@ -22,6 +22,8 @@ When Nmap is not installed or when `--no-nmap` is passed, the tool **gracefully 
 6. **Configuration Profiles:** Manage concurrency levels, timeouts, and discovery targets via structured TOML config profiles.
 7. **Structured Reporting:** Output results directly to stdout or serialize them to custom JSON files for downstream processing.
 8. **Scope Guardrails:** Refuses to run without an explicit `--i-have-authorization` acknowledgment, and supports `--allow`/`--deny` IP/CIDR lists (or files) to keep scans confined to an agreed-upon engagement scope.
+9. **UDP Scanning:** `--udp` switches the scanner to UDP datagram probes (with protocol-aware payloads for DNS/NTP/SNMP), detecting closed ports via ICMP port-unreachable without requiring raw-socket privileges.
+10. **Built-in Service Database:** A large offline TCP/UDP port-to-service table (`src/services.rs`) labels well-known services in stdout output even when Nmap isn't installed or `--no-nmap` is used.
 
 ---
 
@@ -39,6 +41,7 @@ Network Enumeration Tool/
 │   ├── model.rs             # Scan Result and Host/Port data structures
 │   ├── capabilities.rs      # Runtime capability probe (nmap, raw sockets)
 │   ├── scope.rs             # Authorization gate + allow/deny scope policy
+│   ├── services.rs          # Offline TCP/UDP port -> service-name lookup table
 │   ├── targets/
 │   │   ├── mod.rs
 │   │   └── resolver.rs      # DNS lookup, IP parsing, and CIDR expansion
@@ -46,7 +49,9 @@ Network Enumeration Tool/
 │   │   └── mod.rs           # ICMP and TCP ping sweeps with progress bars
 │   ├── scanners/
 │   │   ├── mod.rs           # PortScanner trait
-│   │   └── connect.rs       # TCP Connect scanner implementation
+│   │   ├── connect.rs       # TCP Connect scanner implementation
+│   │   ├── syn.rs           # Raw TCP SYN scanner implementation
+│   │   └── udp.rs           # UDP datagram scanner implementation
 │   ├── nmap/
 │   │   ├── mod.rs           # Subprocess execution and XML result merging
 │   │   ├── command.rs       # Dynamic argument building & targeted NSE selection
@@ -166,7 +171,13 @@ Specify the path to the directory containing native Lua script plugins (like `ht
 cargo run -- localhost -p 8080 --custom-lua-dir ./plugins --i-have-authorization
 ```
 
-### 10. Restrict Scanning to an Approved Scope
+### 10. UDP Scan
+Scan common UDP services (DNS, NTP, SNMP get protocol-specific probe payloads; other ports get an empty datagram). No response within the timeout is reported as `open|filtered`, matching Nmap's own UDP ambiguity; a closed port is detected via an ICMP port-unreachable response, no root required:
+```bash
+cargo run -- 10.0.0.1 -p 53,123,161,500 --udp --i-have-authorization
+```
+
+### 11. Restrict Scanning to an Approved Scope
 Only scan targets inside the agreed engagement range, even if a broader or unrelated target is passed by mistake; anything outside `--allow` (or inside `--deny`) is skipped with a warning instead of being scanned:
 ```bash
 cargo run -- 10.0.0.0/24 --allow 10.0.0.0/24 --deny 10.0.0.1 --i-have-authorization

@@ -3,7 +3,7 @@ pub mod xml;
 
 use std::net::IpAddr;
 use tokio::process::Command;
-use crate::model::{ScanResultSummary, PortStatus};
+use crate::model::{ScanResultSummary, PortStatus, TransportProtocol};
 use crate::capabilities::Capabilities;
 use command::{NmapCommandBuilder, auto_select_scripts};
 use xml::NmapRun;
@@ -30,16 +30,20 @@ impl NmapEnricher {
             return Err("Nmap is not present on the system PATH.".to_string());
         }
 
-        // 1. Collect live host IPs and union of open ports
+        // 1. Collect live host IPs and union of open (or ambiguous) ports.
+        // Every port in a single run shares the same protocol, since main.rs picks
+        // one scanner (TCP connect/SYN, or UDP) for the whole scan.
         let mut live_ips = Vec::new();
         let mut open_ports = Vec::new();
+        let mut protocol = TransportProtocol::Tcp;
 
         for host in &summary.hosts {
             if host.status == crate::model::HostStatus::Up {
                 live_ips.push(host.ip);
                 for port_res in &host.ports {
-                    if port_res.status == PortStatus::Open {
+                    if port_res.status == PortStatus::Open || port_res.status == PortStatus::OpenFiltered {
                         open_ports.push(port_res.port);
+                        protocol = port_res.protocol;
                     }
                 }
             }
@@ -62,6 +66,7 @@ impl NmapEnricher {
 
         // 2. Build Nmap Command
         let mut builder = NmapCommandBuilder::new(live_ips.clone(), open_ports.clone())
+            .with_protocol(protocol)
             .with_version_detection(true)
             .with_os_detection(caps.has_raw_socket); // OS detection requires raw socket privilege
 

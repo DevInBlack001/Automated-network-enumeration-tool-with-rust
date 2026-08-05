@@ -16,6 +16,7 @@ pub async fn run_scan(
 ) -> ScanResultSummary {
     let start_time = Instant::now();
     let total_hosts = hosts.len();
+    let protocol = scanner.protocol();
     
     // We will generate a list of all (ip, port) combinations to scan
     let mut scan_jobs = Vec::new();
@@ -74,6 +75,7 @@ pub async fn run_scan(
             ports_list.push(PortResult {
                 port,
                 status,
+                protocol,
                 service: None,
                 banner: None,
             });

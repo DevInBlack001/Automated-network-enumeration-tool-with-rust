@@ -3,7 +3,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
-use crate::model::PortStatus;
+use crate::model::{PortStatus, TransportProtocol};
 use crate::scanners::PortScanner;
 
 pub struct ConnectScanner;
@@ -16,6 +16,10 @@ impl PortScanner for ConnectScanner {
 
     fn requires_raw_socket(&self) -> bool {
         false
+    }
+
+    fn protocol(&self) -> TransportProtocol {
+        TransportProtocol::Tcp
     }
 
     async fn scan_port(&self, ip: IpAddr, port: u16, timeout_duration: Duration) -> PortStatus {

@@ -10,6 +10,7 @@ mod capabilities;
 mod nmap;
 mod scripting;
 mod scope;
+mod services;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,7 +18,7 @@ use clap::Parser;
 
 use cli::{Cli, parse_ports};
 use targets::resolver::resolve_targets;
-use scanners::{PortScanner, connect::ConnectScanner, syn::SynScanner};
+use scanners::{PortScanner, connect::ConnectScanner, syn::SynScanner, udp::UdpScanner};
 use engine::run_scan;
 use report::json::save_to_json;
 use config::{ConfigFile, ScanConfig};
@@ -144,8 +145,14 @@ async fn main() {
 
     // 5. Initialize scanner
     // Based on CLI flags and detected system capabilities (root vs unprivileged),
-    // we assign either the high-performance async ConnectScanner or the raw TCP SYN packet SynScanner.
-    let scanner: Arc<dyn PortScanner> = if cli.syn {
+    // we assign either the high-performance async ConnectScanner, the raw TCP SYN
+    // packet SynScanner, or the UdpScanner for UDP datagram probing.
+    let scanner: Arc<dyn PortScanner> = if cli.udp {
+        println!("[*] Using UDP scan mode.");
+        println!("    Note: UDP results are inherently ambiguous (no response = open|filtered).");
+        println!("    Narrow --ports and/or raise --timeout for more reliable results.");
+        Arc::new(UdpScanner::new())
+    } else if cli.syn {
         if caps.has_raw_socket {
             println!("[*] Using native SYN scan (privileged mode).");
             Arc::new(SynScanner::new())
@@ -209,19 +216,28 @@ async fn main() {
     println!("[*] Hosts up: {} / {}", summary.hosts_up, summary.targets_scanned);
     
     // Print a quick table of results to stdout
-    println!("\nPORT      STATE    SERVICE      VERSION/BANNER");
+    println!("\nPORT      PROTO STATE          SERVICE      VERSION/BANNER");
     for host in &summary.hosts {
         if host.status == model::HostStatus::Up {
             println!("Results for {}:", host.ip);
             let mut open_ports = 0;
             for port_res in &host.ports {
-                if port_res.status == model::PortStatus::Open {
-                    let svc = port_res.service.as_deref().unwrap_or_else(|| get_common_service_name(port_res.port));
+                if port_res.status == model::PortStatus::Open || port_res.status == model::PortStatus::OpenFiltered {
+                    let proto = match port_res.protocol {
+                        model::TransportProtocol::Tcp => "tcp",
+                        model::TransportProtocol::Udp => "udp",
+                    };
+                    let state = match port_res.status {
+                        model::PortStatus::Open => "open",
+                        model::PortStatus::OpenFiltered => "open|filtered",
+                        _ => unreachable!(),
+                    };
+                    let svc = port_res.service.as_deref().unwrap_or_else(|| services::lookup(port_res.protocol, port_res.port));
                     let banner = port_res.banner.as_deref().unwrap_or("");
                     if banner.is_empty() {
-                        println!("{:<9}/tcp open     {:<12}", port_res.port, svc);
+                        println!("{:<9} {:<5} {:<14} {:<12}", port_res.port, proto, state, svc);
                     } else {
-                        println!("{:<9}/tcp open     {:<12} {}", port_res.port, svc, banner);
+                        println!("{:<9} {:<5} {:<14} {:<12} {}", port_res.port, proto, state, svc, banner);
                     }
                     open_ports += 1;
                 }
@@ -241,26 +257,5 @@ async fn main() {
         } else {
             println!("[+] Results saved successfully.");
         }
-    }
-}
-
-// Simple lookup for common ports to show service name in stdout
-fn get_common_service_name(port: u16) -> &'static str {
-    match port {
-        21 => "ftp",
-        22 => "ssh",
-        23 => "telnet",
-        25 => "smtp",
-        53 => "dns",
-        80 => "http",
-        110 => "pop3",
-        143 => "imap",
-        443 => "https",
-        445 => "microsoft-ds",
-        3306 => "mysql",
-        3389 => "ms-wbt-server",
-        2379 => "etcd",
-        8080 => "http-proxy",
-        _ => "unknown",
     }
 }

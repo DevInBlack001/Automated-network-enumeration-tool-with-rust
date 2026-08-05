@@ -4,7 +4,7 @@ use tokio::net::TcpStream;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::time::timeout;
 use std::time::Duration;
-use crate::model::{ScanResultSummary, PortStatus};
+use crate::model::{ScanResultSummary, PortStatus, TransportProtocol};
 
 // Raw helper to perform HTTP/1.0 GET request without external HTTP library dependencies
 async fn http_get_raw(host: &str, port: u16, path: &str, timeout_ms: u64) -> Result<(u16, String), String> {
@@ -111,7 +111,10 @@ pub async fn run_plugins(results: &mut ScanResultSummary, plugins_dir: &str) {
     for host in &mut results.hosts {
         let host_ip = host.ip.to_string();
         for port_res in &mut host.ports {
-            if port_res.status != PortStatus::Open {
+            // These native plugins speak TCP (raw connect/HTTP GET); running them
+            // against a UDP "open" port would probe an unrelated TCP service on
+            // the same port number instead of the one actually scanned.
+            if port_res.status != PortStatus::Open || port_res.protocol != TransportProtocol::Tcp {
                 continue;
             }
 

@@ -1,9 +1,11 @@
 use std::net::IpAddr;
 use std::path::Path;
+use crate::model::TransportProtocol;
 
 pub struct NmapCommandBuilder {
     pub targets: Vec<IpAddr>,
     pub ports: Vec<u16>,
+    pub protocol: TransportProtocol,
     pub version_detection: bool,
     pub os_detection: bool,
     pub scripts: Vec<String>,
@@ -14,10 +16,16 @@ impl NmapCommandBuilder {
         NmapCommandBuilder {
             targets,
             ports,
+            protocol: TransportProtocol::Tcp,
             version_detection: true,
             os_detection: false,
             scripts: Vec::new(),
         }
+    }
+
+    pub fn with_protocol(mut self, protocol: TransportProtocol) -> Self {
+        self.protocol = protocol;
+        self
     }
 
     pub fn with_os_detection(mut self, enabled: bool) -> Self {
@@ -43,6 +51,11 @@ impl NmapCommandBuilder {
         // Output in XML format to stdout
         args.push("-oX".to_string());
         args.push("-".to_string());
+
+        // Scan type: UDP datagram scan instead of the default TCP behavior
+        if self.protocol == TransportProtocol::Udp {
+            args.push("-sU".to_string());
+        }
 
         // Version detection
         if self.version_detection {

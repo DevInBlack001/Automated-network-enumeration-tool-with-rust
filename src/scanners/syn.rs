@@ -4,7 +4,7 @@ use std::time::Duration;
 use pnet::packet::tcp::{MutableTcpPacket, TcpFlags};
 use pnet::transport::{transport_channel, TransportChannelType, TransportProtocol, tcp_packet_iter};
 use pnet::packet::ip::IpNextHeaderProtocols;
-use crate::model::PortStatus;
+use crate::model::{PortStatus, TransportProtocol as NetenumProtocol};
 use crate::scanners::PortScanner;
 
 pub struct SynScanner;
@@ -31,6 +31,10 @@ impl PortScanner for SynScanner {
 
     fn requires_raw_socket(&self) -> bool {
         true
+    }
+
+    fn protocol(&self) -> NetenumProtocol {
+        NetenumProtocol::Tcp
     }
 
     async fn scan_port(&self, ip: IpAddr, port: u16, timeout: Duration) -> PortStatus {
