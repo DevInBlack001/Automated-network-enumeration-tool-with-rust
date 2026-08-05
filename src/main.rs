@@ -9,6 +9,7 @@ mod discovery;
 mod capabilities;
 mod nmap;
 mod scripting;
+mod scope;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,11 +24,30 @@ use config::{ConfigFile, ScanConfig};
 use discovery::run_discovery;
 use capabilities::Capabilities;
 use nmap::NmapEnricher;
+use scope::ScopePolicy;
 
 #[tokio::main]
 async fn main() {
     // 1. Parse command line arguments
     let cli = Cli::parse();
+
+    // 1.5 Refuse to run at all without an explicit authorization acknowledgment.
+    // This must happen before any network activity, including capability probing.
+    if !cli.authorized {
+        eprintln!("[!] Refusing to scan: no authorization acknowledgment given.");
+        eprintln!("    netenum performs active reconnaissance (port scans, banner grabs, service probes).");
+        eprintln!("    Only run it against systems you own or have explicit written permission to test.");
+        eprintln!("    Re-run with --i-have-authorization once you've confirmed you're authorized.");
+        std::process::exit(1);
+    }
+
+    let scope_policy = match ScopePolicy::build(&cli.allow, &cli.allow_file, &cli.deny, &cli.deny_file) {
+        Ok(policy) => policy,
+        Err(e) => {
+            eprintln!("[!] Scope configuration error: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // Detect system capabilities
     let caps = Capabilities::detect();
@@ -93,6 +113,19 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // 3.5 Enforce scope guardrails (allowlist/denylist) on the resolved targets.
+    let (hosts, out_of_scope) = scope_policy.partition(hosts);
+    if !out_of_scope.is_empty() {
+        println!("[!] {} target(s) excluded by scope policy:", out_of_scope.len());
+        for ip in &out_of_scope {
+            println!("    - {}", ip);
+        }
+    }
+    if hosts.is_empty() {
+        eprintln!("[!] Error: All resolved targets are outside the configured scope.");
+        std::process::exit(1);
+    }
 
     // 4. Parse ports
     let ports = match parse_ports(&cli.ports) {

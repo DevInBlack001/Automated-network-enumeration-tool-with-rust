@@ -54,6 +54,29 @@ pub struct Cli {
     /// Path to custom Lua plugins directory. Defaults to "./plugins"
     #[arg(long = "custom-lua-dir", default_value = "./plugins")]
     pub custom_lua_dir: String,
+
+    /// Explicit acknowledgment that you own or have written permission to scan every
+    /// target given. netenum performs active reconnaissance (port scans, banner grabs,
+    /// service probes) and refuses to run without this flag.
+    #[arg(long = "i-have-authorization")]
+    pub authorized: bool,
+
+    /// Restrict scanning to this IP/CIDR (repeatable). If any --allow entries are
+    /// given, targets outside all of them are skipped even if passed on the command line.
+    #[arg(long = "allow")]
+    pub allow: Vec<String>,
+
+    /// Path to a file of allowed IPs/CIDRs, one per line ('#' comments supported).
+    #[arg(long = "allow-file")]
+    pub allow_file: Option<String>,
+
+    /// Exclude this IP/CIDR from scanning (repeatable). Denylist entries always win over the allowlist.
+    #[arg(long = "deny")]
+    pub deny: Vec<String>,
+
+    /// Path to a file of denied IPs/CIDRs, one per line ('#' comments supported).
+    #[arg(long = "deny-file")]
+    pub deny_file: Option<String>,
 }
 
 /// Parses a port string which can contain comma-separated values and ranges (e.g. "22,80,443,1000-2000")
