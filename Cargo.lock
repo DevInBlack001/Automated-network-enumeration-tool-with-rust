@@ -488,6 +488,7 @@ dependencies = [
  "futures",
  "indicatif",
  "ipnet",
+ "ipnetwork",
  "libc",
  "mlua",
  "pnet",

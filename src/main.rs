@@ -11,6 +11,7 @@ mod nmap;
 mod scripting;
 mod scope;
 mod services;
+mod banner;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -178,7 +179,14 @@ async fn main() {
         println!("[*] Skipping host discovery. Scanning all {} target(s) directly.", hosts.len());
         hosts
     } else {
-        run_discovery(hosts, &scan_config).await
+        let arp_enabled = if cli.arp && !caps.has_raw_socket {
+            println!("[!] Warning: ARP discovery requested but CAP_NET_RAW / root privileges are missing.");
+            println!("    Falling back to ICMP/TCP ping discovery.");
+            false
+        } else {
+            cli.arp
+        };
+        run_discovery(hosts, &scan_config, arp_enabled).await
     };
 
     if scan_hosts.is_empty() {
@@ -190,6 +198,12 @@ async fn main() {
     // Run the high-performance asynchronous port scanner concurrently with bounded semaphore limits.
     let timeout_duration = Duration::from_millis(scan_config.timeout_ms);
     let mut summary = run_scan(scan_hosts, ports, scanner, scan_config.concurrency, timeout_duration).await;
+
+    // 7.4 Generic native banner grab (no Nmap, no port-specific script required)
+    // Probes every open TCP port that doesn't already have a banner: reads whatever
+    // the service sends unprompted, or falls back to a generic HTTP/1.0 request.
+    println!("[*] Grabbing native service banners...");
+    banner::grab_banners(&mut summary, scan_config.timeout_ms).await;
 
     // 7.5 Run native Lua script plugins
     // Scan `./plugins` directory for user-defined native Lua scripts (e.g. HTTP title extraction,

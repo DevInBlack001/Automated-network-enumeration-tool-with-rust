@@ -39,6 +39,12 @@ pub struct Cli {
     #[arg(long = "no-ping")]
     pub no_ping: bool,
 
+    /// Use ARP requests to discover local LAN hosts before scanning (requires
+    /// CAP_NET_RAW / root privileges). Falls back to ICMP/TCP ping discovery for
+    /// targets outside every local subnet, or if privileges are missing.
+    #[arg(long = "arp")]
+    pub arp: bool,
+
     /// Disable Nmap enrichment layer (force native-only mode)
     #[arg(long = "no-nmap")]
     pub no_nmap: bool,

@@ -24,6 +24,8 @@ When Nmap is not installed or when `--no-nmap` is passed, the tool **gracefully 
 8. **Scope Guardrails:** Refuses to run without an explicit `--i-have-authorization` acknowledgment, and supports `--allow`/`--deny` IP/CIDR lists (or files) to keep scans confined to an agreed-upon engagement scope.
 9. **UDP Scanning:** `--udp` switches the scanner to UDP datagram probes (with protocol-aware payloads for DNS/NTP/SNMP), detecting closed ports via ICMP port-unreachable without requiring raw-socket privileges.
 10. **Built-in Service Database:** A large offline TCP/UDP port-to-service table (`src/services.rs`) labels well-known services in stdout output even when Nmap isn't installed or `--no-nmap` is used.
+11. **ARP Host Discovery:** `--arp` resolves IPv4 targets on a locally-connected subnet via a batch of raw ARP requests (faster and firewall-proof on a LAN) before falling back to ICMP/TCP ping for anything ARP can't reach.
+12. **Generic Native Banner Grabbing:** Every open TCP port without a banner is probed directly (`src/banner.rs`) — reading whatever the service sends unprompted, or falling back to a generic HTTP/1.0 request — so unrecognized/non-standard ports still get real, live-captured evidence even with `--no-nmap` and no matching Lua plugin.
 
 ---
 
@@ -42,11 +44,13 @@ Network Enumeration Tool/
 │   ├── capabilities.rs      # Runtime capability probe (nmap, raw sockets)
 │   ├── scope.rs             # Authorization gate + allow/deny scope policy
 │   ├── services.rs          # Offline TCP/UDP port -> service-name lookup table
+│   ├── banner.rs            # Generic native TCP banner grabbing (no Nmap required)
 │   ├── targets/
 │   │   ├── mod.rs
 │   │   └── resolver.rs      # DNS lookup, IP parsing, and CIDR expansion
 │   ├── discovery/
-│   │   └── mod.rs           # ICMP and TCP ping sweeps with progress bars
+│   │   ├── mod.rs           # ICMP and TCP ping sweeps with progress bars
+│   │   └── arp.rs           # Raw ARP request/reply host discovery for local subnets
 │   ├── scanners/
 │   │   ├── mod.rs           # PortScanner trait
 │   │   ├── connect.rs       # TCP Connect scanner implementation
@@ -177,7 +181,19 @@ Scan common UDP services (DNS, NTP, SNMP get protocol-specific probe payloads; o
 cargo run -- 10.0.0.1 -p 53,123,161,500 --udp --i-have-authorization
 ```
 
-### 11. Restrict Scanning to an Approved Scope
+### 11. ARP Host Discovery on a Local LAN
+Resolve which IPv4 targets on your local subnet are alive via raw ARP requests instead of ICMP/TCP ping (requires root or `CAP_NET_RAW`; falls back automatically for targets outside any local subnet, or if privileges are missing):
+```bash
+sudo target/release/netenum 192.168.1.0/24 --arp --i-have-authorization
+```
+
+### 12. Native Banner Grabbing on Non-Standard Ports (No Nmap)
+Even without Nmap, netenum captures real service banners from *any* open TCP port, not just a fixed list — it reads whatever the service sends unprompted, or falls back to a generic HTTP/1.0 request:
+```bash
+cargo run -- 10.0.0.1 -p 1-65535 --no-nmap --i-have-authorization
+```
+
+### 13. Restrict Scanning to an Approved Scope
 Only scan targets inside the agreed engagement range, even if a broader or unrelated target is passed by mistake; anything outside `--allow` (or inside `--deny`) is skipped with a warning instead of being scanned:
 ```bash
 cargo run -- 10.0.0.0/24 --allow 10.0.0.0/24 --deny 10.0.0.1 --i-have-authorization

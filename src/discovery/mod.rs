@@ -1,4 +1,4 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -9,6 +9,8 @@ use futures::stream::{self, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::config::ScanConfig;
+
+pub mod arp;
 
 /// Perform ICMP ping by shelling out to the system 'ping' utility (which has capabilities to run unprivileged).
 async fn ping_host(ip: IpAddr, timeout_ms: u64) -> bool {
@@ -91,15 +93,53 @@ async fn is_host_alive(ip: IpAddr, config: &ScanConfig) -> bool {
 }
 
 /// Run host discovery across all target addresses with concurrency control and a progress bar.
-pub async fn run_discovery(targets: Vec<IpAddr>, config: &ScanConfig) -> Vec<IpAddr> {
+///
+/// When `arp_enabled` is set, IPv4 targets on a locally-connected subnet are resolved
+/// via a batch of ARP requests first (fast and reliable on a LAN, no firewall to worry
+/// about); everything ARP doesn't cover falls through to the usual ICMP/TCP ping sweep.
+pub async fn run_discovery(targets: Vec<IpAddr>, config: &ScanConfig, arp_enabled: bool) -> Vec<IpAddr> {
     let total_targets = targets.len();
     if total_targets == 0 {
         return Vec::new();
     }
 
-    println!("[*] Starting host discovery for {} target address(es)...", total_targets);
+    let mut alive_hosts: Vec<IpAddr> = Vec::new();
+    let mut remaining_targets = targets;
 
-    let pb = ProgressBar::new(total_targets as u64);
+    if arp_enabled {
+        let ipv4_targets: Vec<Ipv4Addr> = remaining_targets
+            .iter()
+            .filter_map(|ip| match ip {
+                IpAddr::V4(v4) => Some(*v4),
+                IpAddr::V6(_) => None,
+            })
+            .collect();
+
+        if !ipv4_targets.is_empty() {
+            println!("[*] Running ARP discovery for locally-reachable IPv4 target(s)...");
+            let arp_timeout = Duration::from_millis(config.timeout_ms);
+            let found = tokio::task::spawn_blocking(move || arp::arp_discover(&ipv4_targets, arp_timeout))
+                .await
+                .unwrap_or_default();
+            println!("[+] ARP discovery found {} live host(s)", found.len());
+
+            remaining_targets.retain(|ip| match ip {
+                IpAddr::V4(v4) => !found.contains(v4),
+                IpAddr::V6(_) => true,
+            });
+            alive_hosts.extend(found.into_iter().map(IpAddr::V4));
+        }
+    }
+
+    if remaining_targets.is_empty() {
+        alive_hosts.sort();
+        println!("[+] Discovered {} live host(s) out of {} target(s)", alive_hosts.len(), total_targets);
+        return alive_hosts;
+    }
+
+    println!("[*] Starting host discovery for {} target address(es)...", remaining_targets.len());
+
+    let pb = ProgressBar::new(remaining_targets.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) - {msg}")
@@ -111,7 +151,7 @@ pub async fn run_discovery(targets: Vec<IpAddr>, config: &ScanConfig) -> Vec<IpA
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
     let config_arc = Arc::new(config.clone());
 
-    let discovery_stream = stream::iter(targets).map(|ip| {
+    let discovery_stream = stream::iter(remaining_targets).map(|ip| {
         let sem = Arc::clone(&semaphore);
         let cfg = Arc::clone(&config_arc);
         let pb_clone = pb.clone();
@@ -128,7 +168,6 @@ pub async fn run_discovery(targets: Vec<IpAddr>, config: &ScanConfig) -> Vec<IpA
     });
 
     let mut results = discovery_stream.buffer_unordered(config.concurrency);
-    let mut alive_hosts = Vec::new();
 
     while let Some((ip, alive)) = results.next().await {
         if alive {
