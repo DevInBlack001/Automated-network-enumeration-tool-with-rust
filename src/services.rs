@@ -1,4 +1,4 @@
-use crate::model::TransportProtocol;
+use crate::model::{HostStatus, PortStatus, ScanResultSummary, ServiceSource, TransportProtocol};
 
 /// Static, offline port -> service-name lookup so netenum can still label ports
 /// sensibly when Nmap isn't installed or `--no-nmap`/`--no-nmap` is used. This is
@@ -13,6 +13,35 @@ pub fn lookup(protocol: TransportProtocol, port: u16) -> &'static str {
         .binary_search_by_key(&port, |&(p, _)| p)
         .map(|idx| table[idx].1)
         .unwrap_or("unknown")
+}
+
+/// Confidence assigned to a port-number-only guess: no live evidence at all.
+const PORT_GUESS_CONFIDENCE: u8 = 20;
+
+/// Final pass: labels any still-unidentified open port with a low-confidence,
+/// port-number-only guess. Must run after Nmap enrichment and native banner
+/// grabbing so it never overrides a higher-fidelity identification.
+pub fn apply_fallback_guesses(results: &mut ScanResultSummary) {
+    for host in &mut results.hosts {
+        if host.status != HostStatus::Up {
+            continue;
+        }
+        for port_res in &mut host.ports {
+            if port_res.service.is_some() {
+                continue;
+            }
+            if !matches!(port_res.status, PortStatus::Open | PortStatus::OpenFiltered) {
+                continue;
+            }
+            let guess = lookup(port_res.protocol, port_res.port);
+            if guess == "unknown" {
+                continue;
+            }
+            port_res.service = Some(guess.to_string());
+            port_res.confidence = Some(PORT_GUESS_CONFIDENCE);
+            port_res.confidence_source = Some(ServiceSource::PortGuess);
+        }
+    }
 }
 
 // Sorted ascending by port number (required for binary search).

@@ -58,6 +58,9 @@ pub struct Service {
     pub version: Option<String>,
     #[serde(rename = "@extrainfo")]
     pub extra_info: Option<String>,
+    /// Nmap's own match confidence, 0-10.
+    #[serde(rename = "@conf")]
+    pub conf: Option<u8>,
 }
 
 #[derive(Debug, Deserialize)]

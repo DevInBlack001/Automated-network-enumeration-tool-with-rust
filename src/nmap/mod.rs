@@ -125,6 +125,11 @@ impl NmapEnricher {
                             if let Some(service) = parsed_port.service.as_ref() {
                                 if let Some(name) = service.name.as_ref() {
                                     port_res.service = Some(name.clone());
+                                    // Nmap reports match confidence on a 0-10 scale; default to a
+                                    // reasonably high value on the rare case it's omitted from XML.
+                                    let conf = service.conf.map(|c| c.saturating_mul(10).min(100)).unwrap_or(70);
+                                    port_res.confidence = Some(conf);
+                                    port_res.confidence_source = Some(crate::model::ServiceSource::NmapProbe);
                                 }
 
                                 // Construct version banner, extending any banner a native

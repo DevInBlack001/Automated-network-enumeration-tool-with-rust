@@ -225,12 +225,16 @@ async fn main() {
         println!("\n[*] Nmap not found on system PATH. Skipping enrichment.");
     }
 
+    // 8.5 Label any still-unidentified open port with a low-confidence, port-number-only
+    // guess. Runs last so it never overrides a higher-fidelity Nmap or banner-based match.
+    services::apply_fallback_guesses(&mut summary);
+
     // 9. Print summary
     println!("\n[*] Scan completed in {}ms", summary.duration_ms);
     println!("[*] Hosts up: {} / {}", summary.hosts_up, summary.targets_scanned);
-    
+
     // Print a quick table of results to stdout
-    println!("\nPORT      PROTO STATE          SERVICE      VERSION/BANNER");
+    println!("\nPORT      PROTO STATE          SERVICE      CONFIDENCE      VERSION/BANNER");
     for host in &summary.hosts {
         if host.status == model::HostStatus::Up {
             println!("Results for {}:", host.ip);
@@ -246,12 +250,18 @@ async fn main() {
                         model::PortStatus::OpenFiltered => "open|filtered",
                         _ => unreachable!(),
                     };
-                    let svc = port_res.service.as_deref().unwrap_or_else(|| services::lookup(port_res.protocol, port_res.port));
+                    let svc = port_res.service.as_deref().unwrap_or("unknown");
+                    let conf = match (port_res.confidence, port_res.confidence_source) {
+                        (Some(c), Some(model::ServiceSource::NmapProbe)) => format!("{}% (nmap)", c),
+                        (Some(c), Some(model::ServiceSource::NativeBanner)) => format!("{}% (banner)", c),
+                        (Some(c), Some(model::ServiceSource::PortGuess)) => format!("{}% (guess)", c),
+                        _ => "-".to_string(),
+                    };
                     let banner = port_res.banner.as_deref().unwrap_or("");
                     if banner.is_empty() {
-                        println!("{:<9} {:<5} {:<14} {:<12}", port_res.port, proto, state, svc);
+                        println!("{:<9} {:<5} {:<14} {:<12} {:<15}", port_res.port, proto, state, svc, conf);
                     } else {
-                        println!("{:<9} {:<5} {:<14} {:<12} {}", port_res.port, proto, state, svc, banner);
+                        println!("{:<9} {:<5} {:<14} {:<12} {:<15} {}", port_res.port, proto, state, svc, conf, banner);
                     }
                     open_ports += 1;
                 }

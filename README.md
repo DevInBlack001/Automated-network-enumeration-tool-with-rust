@@ -26,6 +26,7 @@ When Nmap is not installed or when `--no-nmap` is passed, the tool **gracefully 
 10. **Built-in Service Database:** A large offline TCP/UDP port-to-service table (`src/services.rs`) labels well-known services in stdout output even when Nmap isn't installed or `--no-nmap` is used.
 11. **ARP Host Discovery:** `--arp` resolves IPv4 targets on a locally-connected subnet via a batch of raw ARP requests (faster and firewall-proof on a LAN) before falling back to ICMP/TCP ping for anything ARP can't reach.
 12. **Generic Native Banner Grabbing:** Every open TCP port without a banner is probed directly (`src/banner.rs`) — reading whatever the service sends unprompted, or falling back to a generic HTTP/1.0 request — so unrecognized/non-standard ports still get real, live-captured evidence even with `--no-nmap` and no matching Lua plugin.
+13. **Service/Version Confidence Scoring:** Every identified service carries a `confidence` (0-100) and `confidence_source` — `nmap` (probe/signature match), `banner` (live response captured, name inferred), or `guess` (port-number only, no live evidence) — so you can tell at a glance how much to trust the SERVICE label, both in the stdout table and the JSON report.
 
 ---
 
@@ -193,7 +194,17 @@ Even without Nmap, netenum captures real service banners from *any* open TCP por
 cargo run -- 10.0.0.1 -p 1-65535 --no-nmap --i-have-authorization
 ```
 
-### 13. Restrict Scanning to an Approved Scope
+### 13. Reading Service Confidence in Output
+Every open port's SERVICE label comes with a confidence tag showing how it was determined:
+```text
+PORT      PROTO STATE          SERVICE      CONFIDENCE      VERSION/BANNER
+22        tcp   open           ssh          70% (nmap)      OpenSSH 9.6
+8081      tcp   open           http         65% (banner)    HTTP/1.0 200 OK
+3306      tcp   open           mysql        20% (guess)
+```
+`nmap` = Nmap's own probe/signature match confidence; `banner` = a live response was captured and the name inferred from it (or confirmed, for HTTP); `guess` = no live evidence, purely the well-known port number. The same fields (`confidence`, `confidence_source`) are included in JSON output via `-o`.
+
+### 14. Restrict Scanning to an Approved Scope
 Only scan targets inside the agreed engagement range, even if a broader or unrelated target is passed by mistake; anything outside `--allow` (or inside `--deny`) is skipped with a warning instead of being scanned:
 ```bash
 cargo run -- 10.0.0.0/24 --allow 10.0.0.0/24 --deny 10.0.0.1 --i-have-authorization

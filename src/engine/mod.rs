@@ -78,6 +78,8 @@ pub async fn run_scan(
                 protocol,
                 service: None,
                 banner: None,
+                confidence: None,
+                confidence_source: None,
             });
         }
     }

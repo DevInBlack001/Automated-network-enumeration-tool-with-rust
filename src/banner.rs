@@ -4,10 +4,17 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-use crate::model::{HostStatus, PortStatus, ScanResultSummary, TransportProtocol};
+use crate::model::{HostStatus, PortStatus, ScanResultSummary, ServiceSource, TransportProtocol};
+use crate::services;
 
 const MAX_BANNER_LEN: usize = 100;
 const IMMEDIATE_READ_TIMEOUT_MS: u64 = 600;
+/// Confidence assigned when a live banner/response was captured but the service
+/// name itself is still just the port-number guess (no real signature matching).
+const NATIVE_BANNER_CONFIDENCE: u8 = 50;
+/// Confidence assigned when the response is a literal HTTP status line: this is
+/// direct protocol confirmation (our own probe was an HTTP GET), not a guess.
+const HTTP_CONFIRMED_CONFIDENCE: u8 = 65;
 
 /// Attempts to capture a service banner from every open TCP port that doesn't
 /// already have one, without relying on Nmap or a port-specific Lua plugin.
@@ -32,6 +39,22 @@ pub async fn grab_banners(results: &mut ScanResultSummary, timeout_ms: u64) {
             }
 
             if let Some(banner) = grab_one(host.ip, port_res.port, connect_timeout).await {
+                if port_res.service.is_none() {
+                    if banner.starts_with("HTTP/") {
+                        // Direct protocol confirmation: our own probe was an HTTP GET,
+                        // and we got back a real HTTP status line in response.
+                        port_res.service = Some("http".to_string());
+                        port_res.confidence = Some(HTTP_CONFIRMED_CONFIDENCE);
+                        port_res.confidence_source = Some(ServiceSource::NativeBanner);
+                    } else {
+                        let guess = services::lookup(port_res.protocol, port_res.port);
+                        if guess != "unknown" {
+                            port_res.service = Some(guess.to_string());
+                            port_res.confidence = Some(NATIVE_BANNER_CONFIDENCE);
+                            port_res.confidence_source = Some(ServiceSource::NativeBanner);
+                        }
+                    }
+                }
                 port_res.banner = Some(banner);
             }
         }
