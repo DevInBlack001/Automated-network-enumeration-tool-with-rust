@@ -10,8 +10,8 @@ mod capabilities;
 mod nmap;
 mod scripting;
 mod scope;
-mod services;
 mod banner;
+mod udp_identify;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -205,6 +205,12 @@ async fn main() {
     println!("[*] Grabbing native service banners...");
     banner::grab_banners(&mut summary, scan_config.timeout_ms).await;
 
+    // 7.45 Identify UDP services (DNS/NTP/SNMP) by re-probing with the real
+    // protocol request and validating the response structure -- tried against
+    // every open UDP port regardless of port number, not gated by it.
+    println!("[*] Identifying UDP services...");
+    udp_identify::identify_services(&mut summary, scan_config.timeout_ms).await;
+
     // 7.5 Run native Lua script plugins
     // Scan `./plugins` directory for user-defined native Lua scripts (e.g. HTTP title extraction,
     // FTP banner grabs) and execute them against discovered open ports.
@@ -224,10 +230,6 @@ async fn main() {
     } else if !cli.no_nmap && !caps.nmap_present {
         println!("\n[*] Nmap not found on system PATH. Skipping enrichment.");
     }
-
-    // 8.5 Label any still-unidentified open port with a low-confidence, port-number-only
-    // guess. Runs last so it never overrides a higher-fidelity Nmap or banner-based match.
-    services::apply_fallback_guesses(&mut summary);
 
     // 9. Print summary
     println!("\n[*] Scan completed in {}ms", summary.duration_ms);
@@ -254,7 +256,6 @@ async fn main() {
                     let conf = match (port_res.confidence, port_res.confidence_source) {
                         (Some(c), Some(model::ServiceSource::NmapProbe)) => format!("{}% (nmap)", c),
                         (Some(c), Some(model::ServiceSource::NativeBanner)) => format!("{}% (banner)", c),
-                        (Some(c), Some(model::ServiceSource::PortGuess)) => format!("{}% (guess)", c),
                         _ => "-".to_string(),
                     };
                     let banner = port_res.banner.as_deref().unwrap_or("");

@@ -5,16 +5,9 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 
 use crate::model::{HostStatus, PortStatus, ScanResultSummary, ServiceSource, TransportProtocol};
-use crate::services;
 
 const MAX_BANNER_LEN: usize = 100;
 const IMMEDIATE_READ_TIMEOUT_MS: u64 = 600;
-/// Confidence assigned when a live banner/response was captured but the service
-/// name itself is still just the port-number guess (no real signature matching).
-const NATIVE_BANNER_CONFIDENCE: u8 = 50;
-/// Confidence assigned when the response is a literal HTTP status line: this is
-/// direct protocol confirmation (our own probe was an HTTP GET), not a guess.
-const HTTP_CONFIRMED_CONFIDENCE: u8 = 65;
 
 /// Attempts to capture a service banner from every open TCP port that doesn't
 /// already have one, without relying on Nmap or a port-specific Lua plugin.
@@ -40,25 +33,54 @@ pub async fn grab_banners(results: &mut ScanResultSummary, timeout_ms: u64) {
 
             if let Some(banner) = grab_one(host.ip, port_res.port, connect_timeout).await {
                 if port_res.service.is_none() {
-                    if banner.starts_with("HTTP/") {
-                        // Direct protocol confirmation: our own probe was an HTTP GET,
-                        // and we got back a real HTTP status line in response.
-                        port_res.service = Some("http".to_string());
-                        port_res.confidence = Some(HTTP_CONFIRMED_CONFIDENCE);
+                    if let Some((name, confidence)) = identify_banner(&banner) {
+                        port_res.service = Some(name.to_string());
+                        port_res.confidence = Some(confidence);
                         port_res.confidence_source = Some(ServiceSource::NativeBanner);
-                    } else {
-                        let guess = services::lookup(port_res.protocol, port_res.port);
-                        if guess != "unknown" {
-                            port_res.service = Some(guess.to_string());
-                            port_res.confidence = Some(NATIVE_BANNER_CONFIDENCE);
-                            port_res.confidence_source = Some(ServiceSource::NativeBanner);
-                        }
                     }
+                    // No match: leave `service` unset rather than fabricate a
+                    // port-number-based guess. The raw banner is still saved below
+                    // for a human (or Nmap/a plugin) to make sense of.
                 }
                 port_res.banner = Some(banner);
             }
         }
     }
+}
+
+/// Identifies a service directly from the content it sent back — real signature
+/// matching against standardized, unambiguous protocol banner formats, entirely
+/// independent of which port it came from. Genuinely ambiguous responses (e.g. a
+/// bare "220" greeting, used by both FTP and SMTP) are deliberately left
+/// unmatched rather than guessed.
+fn identify_banner(banner: &str) -> Option<(&'static str, u8)> {
+    if banner.starts_with("SSH-") {
+        return Some(("ssh", 90));
+    }
+    if banner.starts_with("HTTP/") {
+        // Especially strong signal here: our own probe was an HTTP GET, so this
+        // is a confirmed protocol round-trip, not just a passive banner match.
+        return Some(("http", 85));
+    }
+    if banner.starts_with("RFB 0") {
+        return Some(("vnc", 90));
+    }
+    if banner.starts_with("+OK") {
+        return Some(("pop3", 80));
+    }
+    if banner.starts_with("* OK") || banner.starts_with("* PREAUTH") {
+        return Some(("imap", 80));
+    }
+    if banner.starts_with("220") {
+        let upper = banner.to_uppercase();
+        if upper.contains("FTP") {
+            return Some(("ftp", 80));
+        }
+        if upper.contains("SMTP") {
+            return Some(("smtp", 80));
+        }
+    }
+    None
 }
 
 async fn grab_one(ip: IpAddr, port: u16, connect_timeout: Duration) -> Option<String> {

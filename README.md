@@ -23,10 +23,10 @@ When Nmap is not installed or when `--no-nmap` is passed, the tool **gracefully 
 7. **Structured Reporting:** Output results directly to stdout or serialize them to custom JSON files for downstream processing.
 8. **Scope Guardrails:** Refuses to run without an explicit `--i-have-authorization` acknowledgment, and supports `--allow`/`--deny` IP/CIDR lists (or files) to keep scans confined to an agreed-upon engagement scope.
 9. **UDP Scanning:** `--udp` switches the scanner to UDP datagram probes (with protocol-aware payloads for DNS/NTP/SNMP), detecting closed ports via ICMP port-unreachable without requiring raw-socket privileges.
-10. **Built-in Service Database:** A large offline TCP/UDP port-to-service table (`src/services.rs`) labels well-known services in stdout output even when Nmap isn't installed or `--no-nmap` is used.
-11. **ARP Host Discovery:** `--arp` resolves IPv4 targets on a locally-connected subnet via a batch of raw ARP requests (faster and firewall-proof on a LAN) before falling back to ICMP/TCP ping for anything ARP can't reach.
-12. **Generic Native Banner Grabbing:** Every open TCP port without a banner is probed directly (`src/banner.rs`) — reading whatever the service sends unprompted, or falling back to a generic HTTP/1.0 request — so unrecognized/non-standard ports still get real, live-captured evidence even with `--no-nmap` and no matching Lua plugin.
-13. **Service/Version Confidence Scoring:** Every identified service carries a `confidence` (0-100) and `confidence_source` — `nmap` (probe/signature match), `banner` (live response captured, name inferred), or `guess` (port-number only, no live evidence) — so you can tell at a glance how much to trust the SERVICE label, both in the stdout table and the JSON report.
+10. **ARP Host Discovery:** `--arp` resolves IPv4 targets on a locally-connected subnet via a batch of raw ARP requests (faster and firewall-proof on a LAN) before falling back to ICMP/TCP ping for anything ARP can't reach.
+11. **Generic Native Banner Grabbing & Signature Identification:** Every open TCP port without a banner is probed directly (`src/banner.rs`) — reading whatever the service sends unprompted, or falling back to a generic HTTP/1.0 request — then identified by matching the actual response against distinctive protocol signatures (an `SSH-` prefix, an HTTP status line, an RFB/VNC handshake, etc.), not by port number. No live evidence means no service name is reported; nothing is ever fabricated from a hardcoded port table.
+12. **Native UDP Service Identification:** Every open/ambiguous UDP port is re-probed with real DNS, NTP, and SNMP requests (`src/udp_identify.rs`), tried against *any* port regardless of number, and only confirmed when the response is structurally valid for that protocol (e.g. a DNS reply must echo the transaction ID with the response flag set; an SNMP reply must contain a GetResponse-PDU and echo the community string) — not just "something answered".
+13. **Service/Version Confidence Scoring:** Every identified service carries a `confidence` (0-100) and `confidence_source` — `nmap` (probe/signature match) or `banner` (live content-based signature match) — so you can tell at a glance how the SERVICE label was determined, both in the stdout table and the JSON report.
 
 ---
 
@@ -44,8 +44,8 @@ Network Enumeration Tool/
 │   ├── model.rs             # Scan Result and Host/Port data structures
 │   ├── capabilities.rs      # Runtime capability probe (nmap, raw sockets)
 │   ├── scope.rs             # Authorization gate + allow/deny scope policy
-│   ├── services.rs          # Offline TCP/UDP port -> service-name lookup table
-│   ├── banner.rs            # Generic native TCP banner grabbing (no Nmap required)
+│   ├── banner.rs            # Native TCP banner grabbing + content-based signature identification
+│   ├── udp_identify.rs      # Native UDP service identification (DNS/NTP/SNMP structural validation)
 │   ├── targets/
 │   │   ├── mod.rs
 │   │   └── resolver.rs      # DNS lookup, IP parsing, and CIDR expansion
@@ -188,23 +188,30 @@ Resolve which IPv4 targets on your local subnet are alive via raw ARP requests i
 sudo target/release/netenum 192.168.1.0/24 --arp --i-have-authorization
 ```
 
-### 12. Native Banner Grabbing on Non-Standard Ports (No Nmap)
-Even without Nmap, netenum captures real service banners from *any* open TCP port, not just a fixed list — it reads whatever the service sends unprompted, or falls back to a generic HTTP/1.0 request:
+### 12. Native Banner Grabbing & Signature Identification (No Nmap)
+Even without Nmap, netenum captures real service banners from *any* open TCP port, not just a fixed list — it reads whatever the service sends unprompted (or falls back to a generic HTTP/1.0 request), then identifies the service by matching that content against distinctive protocol signatures. A port with no response, or a response that doesn't match anything recognizable, is honestly reported as `unknown` — never a fabricated guess based on the port number:
 ```bash
 cargo run -- 10.0.0.1 -p 1-65535 --no-nmap --i-have-authorization
 ```
 
-### 13. Reading Service Confidence in Output
+### 13. UDP Service Identification (DNS/NTP/SNMP)
+Open UDP ports get the same evidence-based treatment: netenum re-sends the real DNS/NTP/SNMP request and only confirms the service if the response is structurally valid for that protocol — tried against any port, not just 53/123/161:
+```bash
+cargo run -- 10.0.0.1 --udp -p 53,123,161,9999 --no-nmap --i-have-authorization
+```
+
+### 14. Reading Service Confidence in Output
 Every open port's SERVICE label comes with a confidence tag showing how it was determined:
 ```text
 PORT      PROTO STATE          SERVICE      CONFIDENCE      VERSION/BANNER
-22        tcp   open           ssh          70% (nmap)      OpenSSH 9.6
-8081      tcp   open           http         65% (banner)    HTTP/1.0 200 OK
-3306      tcp   open           mysql        20% (guess)
+22        tcp   open           ssh          90% (banner)    SSH-2.0-OpenSSH_9.6
+443       tcp   open           https        70% (nmap)      OpenSSL/3.0
+53        udp   open           dns          90% (banner)
+9200      tcp   open           unknown      -
 ```
-`nmap` = Nmap's own probe/signature match confidence; `banner` = a live response was captured and the name inferred from it (or confirmed, for HTTP); `guess` = no live evidence, purely the well-known port number. The same fields (`confidence`, `confidence_source`) are included in JSON output via `-o`.
+`nmap` = Nmap's own probe/signature match confidence; `banner` = identified from live response content via signature matching (e.g. an `SSH-` prefix, an HTTP status line, a validated DNS/NTP/SNMP reply). If a port gives no live evidence at all, it stays `unknown` rather than being labeled from a hardcoded port-number table. The same fields (`confidence`, `confidence_source`) are included in JSON output via `-o`.
 
-### 14. Restrict Scanning to an Approved Scope
+### 15. Restrict Scanning to an Approved Scope
 Only scan targets inside the agreed engagement range, even if a broader or unrelated target is passed by mistake; anything outside `--allow` (or inside `--deny`) is skipped with a warning instead of being scanned:
 ```bash
 cargo run -- 10.0.0.0/24 --allow 10.0.0.0/24 --deny 10.0.0.1 --i-have-authorization

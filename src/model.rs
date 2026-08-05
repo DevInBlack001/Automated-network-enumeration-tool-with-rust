@@ -27,11 +27,9 @@ pub enum TransportProtocol {
 pub enum ServiceSource {
     /// Identified via Nmap's `-sV` probe/signature matching.
     NmapProbe,
-    /// A live banner/response was captured directly from the service, but the
-    /// service name itself is still inferred from the port number.
+    /// Identified from a live response via content-based signature matching
+    /// (e.g. an "SSH-" prefix, an HTTP status line) — not a port-number guess.
     NativeBanner,
-    /// No live evidence at all; purely a guess based on the well-known port number.
-    PortGuess,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
