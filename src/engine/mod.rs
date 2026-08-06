@@ -120,5 +120,6 @@ pub async fn run_scan(
         hosts_up,
         duration_ms,
         hosts: host_results,
+        findings: Vec::new(),
     }
 }
