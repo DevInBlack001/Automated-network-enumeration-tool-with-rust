@@ -65,3 +65,34 @@ pub async fn resolve_targets(target_strings: &[String]) -> Result<Vec<IpAddr>, S
 
     Ok(resolved_ips)
 }
+
+/// Filters `target_strings` down to entries that are hostnames rather than a
+/// raw IP or CIDR network — i.e. targets DNS enumeration can meaningfully run
+/// against, since record queries (MX/TXT/NS/AXFR) need a domain name.
+pub fn hostname_targets(target_strings: &[String]) -> Vec<String> {
+    target_strings
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .filter(|s| IpAddr::from_str(s).is_err() && IpNet::from_str(s).is_err())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hostname_targets_excludes_ips_and_cidrs() {
+        let targets = vec![
+            "example.com".to_string(),
+            "192.168.1.1".to_string(),
+            "10.0.0.0/24".to_string(),
+            "sub.example.org".to_string(),
+        ];
+        assert_eq!(
+            hostname_targets(&targets),
+            vec!["example.com".to_string(), "sub.example.org".to_string()]
+        );
+    }
+}

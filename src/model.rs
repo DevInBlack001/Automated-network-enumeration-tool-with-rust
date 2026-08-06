@@ -104,7 +104,7 @@ pub enum Severity {
 }
 
 /// The enumeration module that produced a `Finding`. Matches the protocol
-/// modules planned for the enumeration branch (DNS, SMB, SNMP, HTTP, TLS).
+/// modules planned for the enumeration branch (DNS, SMB, SNMP, HTTP, TLS, FTP).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FindingProtocol {
@@ -113,6 +113,7 @@ pub enum FindingProtocol {
     Snmp,
     Http,
     Tls,
+    Ftp,
 }
 
 /// A single piece of enumeration output: a discovered fact about a host that's

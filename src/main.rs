@@ -12,13 +12,14 @@ mod scripting;
 mod scope;
 mod banner;
 mod udp_identify;
+mod enumeration;
 
 use std::sync::Arc;
 use std::time::Duration;
 use clap::Parser;
 
 use cli::{Cli, parse_ports};
-use targets::resolver::resolve_targets;
+use targets::resolver::{resolve_targets, hostname_targets};
 use scanners::{PortScanner, connect::ConnectScanner, syn::SynScanner, udp::UdpScanner};
 use engine::run_scan;
 use report::json::save_to_json;
@@ -231,6 +232,27 @@ async fn main() {
         println!("\n[*] Nmap not found on system PATH. Skipping enrichment.");
     }
 
+    // 8.5 DNS enumeration, opt-in via --dns. Only applies to hostname-form
+    // targets -- record queries (MX/TXT/NS/AXFR) need a domain name, not an IP.
+    if cli.dns {
+        let dns_targets = hostname_targets(&cli.targets);
+        if dns_targets.is_empty() {
+            println!("\n[*] --dns given but no hostname-form targets to enumerate (only IPs/CIDRs were provided).");
+        }
+        for domain in &dns_targets {
+            println!("\n[*] Running DNS enumeration for {}...", domain);
+            match enumeration::dns::enumerate(domain).await {
+                Ok((_primary_ip, mut findings)) => {
+                    println!("[+] DNS enumeration complete for {} ({} finding(s)).", domain, findings.len());
+                    summary.findings.append(&mut findings);
+                }
+                Err(e) => {
+                    eprintln!("[!] DNS enumeration failed for {}: {}", domain, e);
+                }
+            }
+        }
+    }
+
     // 9. Print summary
     println!("\n[*] Scan completed in {}ms", summary.duration_ms);
     println!("[*] Hosts up: {} / {}", summary.hosts_up, summary.targets_scanned);
@@ -281,6 +303,19 @@ async fn main() {
             }
             println!();
         }
+    }
+
+    // Print enumeration findings, if any were gathered
+    if !summary.findings.is_empty() {
+        println!("FINDINGS ({}):", summary.findings.len());
+        for finding in &summary.findings {
+            let severity = format!("{:?}", finding.severity).to_uppercase();
+            println!("[{}] {} - {}", severity, finding.id, finding.evidence);
+            if !finding.recommendation.is_empty() {
+                println!("    -> {}", finding.recommendation);
+            }
+        }
+        println!();
     }
 
     // 10. Save output if requested

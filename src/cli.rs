@@ -87,6 +87,12 @@ pub struct Cli {
     /// Path to a file of denied IPs/CIDRs, one per line ('#' comments supported).
     #[arg(long = "deny-file")]
     pub deny_file: Option<String>,
+
+    /// Run DNS enumeration (A/AAAA/CNAME/NS/MX/TXT records, reverse DNS, and an
+    /// AXFR zone transfer probe) against every hostname-form target given.
+    /// Has no effect on targets given as a raw IP or CIDR.
+    #[arg(long = "dns")]
+    pub dns: bool,
 }
 
 /// Parses a port string which can contain comma-separated values and ranges (e.g. "22,80,443,1000-2000")
