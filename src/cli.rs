@@ -93,6 +93,11 @@ pub struct Cli {
     /// Has no effect on targets given as a raw IP or CIDR.
     #[arg(long = "dns")]
     pub dns: bool,
+
+    /// Run HTTP fingerprinting (page title, tech-revealing response headers)
+    /// against every open port identified as an HTTP service.
+    #[arg(long = "http")]
+    pub http: bool,
 }
 
 /// Parses a port string which can contain comma-separated values and ranges (e.g. "22,80,443,1000-2000")

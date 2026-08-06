@@ -253,6 +253,20 @@ async fn main() {
         }
     }
 
+    // 8.6 HTTP fingerprinting, opt-in via --http. Runs against every open port
+    // already identified as an HTTP service, regardless of how the target was given.
+    if cli.http {
+        println!("\n[*] Running HTTP fingerprinting...");
+        let mut http_findings = Vec::new();
+        for host in &summary.hosts {
+            if host.status == model::HostStatus::Up {
+                http_findings.extend(enumeration::http::enumerate_host(host, scan_config.timeout_ms).await);
+            }
+        }
+        println!("[+] HTTP fingerprinting complete ({} finding(s)).", http_findings.len());
+        summary.findings.extend(http_findings);
+    }
+
     // 9. Print summary
     println!("\n[*] Scan completed in {}ms", summary.duration_ms);
     println!("[*] Hosts up: {} / {}", summary.hosts_up, summary.targets_scanned);
