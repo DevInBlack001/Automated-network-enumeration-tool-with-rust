@@ -283,6 +283,20 @@ async fn main() {
         summary.findings.extend(tls_findings);
     }
 
+    // 8.8 FTP enumeration, opt-in via --ftp. Runs against every open port
+    // that looks like FTP, regardless of how the target was given.
+    if cli.ftp {
+        println!("\n[*] Running FTP enumeration...");
+        let mut ftp_findings = Vec::new();
+        for host in &summary.hosts {
+            if host.status == model::HostStatus::Up {
+                ftp_findings.extend(enumeration::ftp::enumerate_host(host, scan_config.timeout_ms).await);
+            }
+        }
+        println!("[+] FTP enumeration complete ({} finding(s)).", ftp_findings.len());
+        summary.findings.extend(ftp_findings);
+    }
+
     // 9. Print summary
     println!("\n[*] Scan completed in {}ms", summary.duration_ms);
     println!("[*] Hosts up: {} / {}", summary.hosts_up, summary.targets_scanned);

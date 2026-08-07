@@ -105,6 +105,11 @@ pub struct Cli {
     /// this is not a trust decision, just enumeration.
     #[arg(long = "tls")]
     pub tls: bool,
+
+    /// Run FTP enumeration (banner capture, anonymous login check) against
+    /// every open port identified as FTP (port 21 or a matching service name).
+    #[arg(long = "ftp")]
+    pub ftp: bool,
 }
 
 /// Parses a port string which can contain comma-separated values and ranges (e.g. "22,80,443,1000-2000")
