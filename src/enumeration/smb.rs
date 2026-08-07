@@ -248,9 +248,28 @@ async fn probe_null_session_and_shares(ip: IpAddr, port: u16, timeout_ms: u64) -
     let t = Duration::from_millis(timeout_ms);
     let server = ip.to_string();
 
-    let client = Client::new(ClientConfig::default());
+    let mut config = ClientConfig::default();
+    config.connection.port = Some(port);
+    // Skip the legacy SMB1-then-upgrade negotiation dance and go straight to
+    // SMB2 -- this probe already confirmed dialect/signing via its own bare
+    // SMB2 NEGOTIATE in `probe_negotiate`, so there's nothing to gain from
+    // the multi-protocol handshake here, and it's a common source of
+    // interop issues against servers that don't implement the SMB2 wildcard
+    // dialect upgrade exactly as this crate expects.
+    config.connection.smb2_only_negotiate = true;
+    // A guest/anonymous session is inherently unauthenticated, so it has no
+    // signing key to sign with -- without this, the client errors out
+    // whenever the server marks such a session as requiring signing, even
+    // though "requires signing on a guest session" is itself part of what
+    // this check is trying to observe.
+    config.connection.allow_unsigned_guest_access = true;
+    let client = Client::new(config);
 
-    let ipc_result = timeout(t, client.ipc_connect(&server, "", String::new())).await;
+    // A fully empty username+password pair isn't valid NTLM input to this
+    // client's SSPI layer (it rejects it as an empty identity before ever
+    // reaching the network) -- "guest" with no password is the standard
+    // stand-in for an unauthenticated/null-session attempt.
+    let ipc_result = timeout(t, client.ipc_connect(&server, "guest", String::new())).await;
     let null_session_ok = matches!(ipc_result, Ok(Ok(())));
 
     if !null_session_ok {
@@ -262,8 +281,8 @@ async fn probe_null_session_and_shares(ip: IpAddr, port: u16, timeout_ms: u64) -
         ip,
         port,
         Severity::High,
-        "SMB server accepted a null/anonymous session (empty username and password)".to_string(),
-        "Disable null/anonymous SMB sessions (RestrictAnonymous on Windows; restrict guest/anonymous access in Samba's smb.conf).".to_string(),
+        "SMB server accepted a session with no real credentials ('guest' account, empty password)".to_string(),
+        "Disable null/anonymous and guest SMB access (RestrictAnonymous on Windows; disable the guest account and restrict anonymous access in Samba's smb.conf).".to_string(),
     ));
 
     if let Ok(Ok(shares)) = timeout(t, client.list_shares(&server)).await {
@@ -303,6 +322,32 @@ mod tests {
             confidence_source: None,
             cpe: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn manual_probe_negotiate_against_fixture() {
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let findings = probe_negotiate(ip, 4450, 3000).await;
+        eprintln!("negotiate findings: {:#?}", findings);
+        assert!(!findings.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn manual_probe_smb1_against_fixture() {
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let findings = probe_smb1(ip, 4450, 3000).await;
+        eprintln!("smb1 findings: {:#?}", findings);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn manual_probe_null_session_against_fixture() {
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let findings = probe_null_session_and_shares(ip, 4450, 5000).await;
+        eprintln!("null session findings: {:#?}", findings);
+        assert!(!findings.is_empty());
     }
 
     #[test]
