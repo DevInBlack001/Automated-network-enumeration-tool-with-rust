@@ -311,6 +311,20 @@ async fn main() {
         summary.findings.extend(snmp_findings);
     }
 
+    // 8.10 SMB enumeration, opt-in via --smb. Runs against every open port
+    // that looks like SMB, regardless of how the target was given.
+    if cli.smb {
+        println!("\n[*] Running SMB enumeration...");
+        let mut smb_findings = Vec::new();
+        for host in &summary.hosts {
+            if host.status == model::HostStatus::Up {
+                smb_findings.extend(enumeration::smb::enumerate_host(host, scan_config.timeout_ms).await);
+            }
+        }
+        println!("[+] SMB enumeration complete ({} finding(s)).", smb_findings.len());
+        summary.findings.extend(smb_findings);
+    }
+
     // 9. Print summary
     println!("\n[*] Scan completed in {}ms", summary.duration_ms);
     println!("[*] Hosts up: {} / {}", summary.hosts_up, summary.targets_scanned);

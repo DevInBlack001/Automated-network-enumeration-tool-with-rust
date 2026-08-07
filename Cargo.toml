@@ -27,3 +27,5 @@ rustls = { version = "0.23.43", default-features = false, features = ["std", "tl
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "logging"] }
 x509-parser = "0.18.1"
 snmp2 = { version = "0.4", features = ["tokio"] }
+smb = "0.11.2"
+smb-rpc = "0.11.2"

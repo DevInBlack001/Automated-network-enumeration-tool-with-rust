@@ -115,6 +115,12 @@ pub struct Cli {
     /// interface table walk) against every open UDP port identified as SNMP.
     #[arg(long = "snmp")]
     pub snmp: bool,
+
+    /// Run SMB enumeration (dialect, signing requirement, SMBv1 exposure,
+    /// null/anonymous session, share listing) against every open port
+    /// identified as SMB (445/139 or a matching service name).
+    #[arg(long = "smb")]
+    pub smb: bool,
 }
 
 /// Parses a port string which can contain comma-separated values and ranges (e.g. "22,80,443,1000-2000")
