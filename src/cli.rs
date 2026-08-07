@@ -98,6 +98,13 @@ pub struct Cli {
     /// against every open port identified as an HTTP service.
     #[arg(long = "http")]
     pub http: bool,
+
+    /// Run TLS certificate inspection (issuer, SAN, expiry) against every open
+    /// port that looks like it speaks TLS. Accepts any certificate presented
+    /// (self-signed, expired, hostname-mismatched) in order to inspect it --
+    /// this is not a trust decision, just enumeration.
+    #[arg(long = "tls")]
+    pub tls: bool,
 }
 
 /// Parses a port string which can contain comma-separated values and ranges (e.g. "22,80,443,1000-2000")

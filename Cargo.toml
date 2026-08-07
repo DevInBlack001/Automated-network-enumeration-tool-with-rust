@@ -23,3 +23,6 @@ mlua = { version = "0.9", features = ["lua54", "vendored", "async"] }
 hickory-resolver = "0.25"
 hickory-proto = "0.25"
 hickory-client = "0.25"
+rustls = { version = "0.23.43", default-features = false, features = ["std", "tls12", "ring", "logging"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "logging"] }
+x509-parser = "0.18.1"

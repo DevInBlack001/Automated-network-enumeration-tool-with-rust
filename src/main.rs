@@ -19,7 +19,7 @@ use std::time::Duration;
 use clap::Parser;
 
 use cli::{Cli, parse_ports};
-use targets::resolver::{resolve_targets, hostname_targets};
+use targets::resolver::{resolve_targets, hostname_targets, hostname_ip_map};
 use scanners::{PortScanner, connect::ConnectScanner, syn::SynScanner, udp::UdpScanner};
 use engine::run_scan;
 use report::json::save_to_json;
@@ -265,6 +265,22 @@ async fn main() {
         }
         println!("[+] HTTP fingerprinting complete ({} finding(s)).", http_findings.len());
         summary.findings.extend(http_findings);
+    }
+
+    // 8.7 TLS certificate inspection, opt-in via --tls. Runs against every open
+    // port that looks like it speaks TLS, regardless of how the target was given.
+    if cli.tls {
+        println!("\n[*] Running TLS certificate inspection...");
+        let sni_map = hostname_ip_map(&cli.targets).await;
+        let mut tls_findings = Vec::new();
+        for host in &summary.hosts {
+            if host.status == model::HostStatus::Up {
+                let sni_hint = sni_map.get(&host.ip).map(String::as_str);
+                tls_findings.extend(enumeration::tls::enumerate_host(host, scan_config.timeout_ms, sni_hint).await);
+            }
+        }
+        println!("[+] TLS certificate inspection complete ({} finding(s)).", tls_findings.len());
+        summary.findings.extend(tls_findings);
     }
 
     // 9. Print summary

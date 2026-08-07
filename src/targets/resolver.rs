@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::IpAddr;
 use ipnet::IpNet;
 use tokio::net::lookup_host;
@@ -76,6 +77,24 @@ pub fn hostname_targets(target_strings: &[String]) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .filter(|s| IpAddr::from_str(s).is_err() && IpNet::from_str(s).is_err())
         .collect()
+}
+
+/// Resolves every hostname-form target and records which hostname each IP
+/// came from. Callers that need a real SNI value rather than a bare IP (TLS
+/// certificate inspection, in particular) use this: many TLS front-ends —
+/// Cloudflare and shared hosting chief among them — hard-reject a handshake
+/// that carries no SNI at all, even though they'll happily serve a bare IP
+/// connection that does include one.
+pub async fn hostname_ip_map(target_strings: &[String]) -> HashMap<IpAddr, String> {
+    let mut map = HashMap::new();
+    for hostname in hostname_targets(target_strings) {
+        if let Ok(addrs) = lookup_host(format!("{}:443", hostname)).await {
+            for addr in addrs {
+                map.entry(addr.ip()).or_insert_with(|| hostname.clone());
+            }
+        }
+    }
+    map
 }
 
 #[cfg(test)]
