@@ -1,8 +1,6 @@
 # netenum — Automated Network Enumeration Toolkit 
 
-An asynchronous network enumeration tool written in Rust, designed for high performance, pluggable scanning techniques, runtime capability detection, and optional deep enrichment via Nmap and custom NSE scripting.
-
----
+An asynchronous network scanning **and** enumeration tool written in Rust, designed for high performance, pluggable scanning techniques, runtime capability detection, and optional deep enrichment via Nmap, custom NSE scripting, and native protocol-specific enumeration modules (DNS, HTTP, TLS, FTP, SNMP, SMB).
 
 ## Architecture
 
@@ -10,7 +8,7 @@ This tool implements the architecture where the Rust engine serves as the core "
 
 When Nmap is not installed or when `--no-nmap` is passed, the tool **gracefully degrades** to native-only mode without breaking.
 
----
+On top of scanning, a set of opt-in enumeration modules (`--dns`, `--http`, `--tls`, `--ftp`, `--snmp`, `--smb`) extract protocol-specific data — DNS records, certificate details, share names, and so on — and report it as structured `Finding`s with a severity and, where relevant, a remediation recommendation.
 
 ## Key Features
 
@@ -28,8 +26,14 @@ When Nmap is not installed or when `--no-nmap` is passed, the tool **gracefully 
 12. **Native UDP Service Identification:** Every open/ambiguous UDP port is re-probed with real DNS, NTP, and SNMP requests (`src/udp_identify.rs`), tried against *any* port regardless of number, and only confirmed when the response is structurally valid for that protocol (e.g. a DNS reply must echo the transaction ID with the response flag set; an SNMP reply must contain a GetResponse-PDU and echo the community string) — not just "something answered".
 13. **Service/Version Confidence Scoring:** Every identified service carries a `confidence` (0-100) and `confidence_source` — `nmap` (probe/signature match) or `banner` (live content-based signature match) — so you can tell at a glance how the SERVICE label was determined, both in the stdout table and the JSON report.
 14. **OS Fingerprinting Summary:** When Nmap's `-O` detection runs (requires `CAP_NET_RAW`/root), the highest-accuracy OS match is parsed from its XML output and surfaced per host — e.g. `OS: Linux 4.15 - 5.6 (98% accuracy)` — in both stdout and the JSON report.
-
----
+15. **CPE Identification:** Nmap-matched services carry CPE identifiers (e.g. `cpe:/a:openbsd:openssh:9.6`) extracted from Nmap's `-sV` output, shown alongside the version banner in both the console table and JSON report.
+16. **Structured Findings Schema:** Enumeration modules report specific, actionable results as `Finding`s — id, host, port, protocol, severity (`info` through `critical`), confidence, evidence, recommendation, and references — surfaced in a dedicated `FINDINGS` section on stdout and in the JSON report.
+17. **DNS Enumeration (`--dns`):** For hostname-form targets, resolves A/AAAA/CNAME/NS/MX/TXT records, performs a reverse lookup on the resolved IP, and attempts an AXFR zone transfer against every discovered nameserver — a successful transfer is flagged as a high-severity finding; a refusal (the secure, expected outcome) produces no false-positive noise.
+18. **HTTP Fingerprinting (`--http`):** Fetches every HTTP-identified port fresh (independent of the truncated banner) and extracts the page title plus any response headers that reveal backend technology (`Server`, `X-Powered-By`, `X-Generator`, etc).
+19. **TLS Certificate Inspection (`--tls`):** Completes a TLS handshake against any port that looks like it speaks TLS, accepting whatever certificate is presented (this inspects, it doesn't validate trust), and reports issuer, subject, SAN, and expiry — flagging expired or soon-to-expire certificates. Sends the real hostname as SNI when the target was given as one, since most CDN/shared-hosting front ends reject a handshake with no SNI at all.
+20. **FTP Enumeration (`--ftp`):** Captures the banner and attempts an anonymous login (`USER anonymous` / `PASS ...`), flagging successful anonymous access as a high-severity finding.
+21. **SNMP Enumeration (`--snmp`):** Tests default community strings (`public`, `private`) against every open UDP port that looks like SNMP; on the first that responds, gathers `sysDescr`/`sysName` and walks the interface table (`ifDescr`) via GETNEXT.
+22. **SMB Enumeration (`--smb`):** Reports the negotiated dialect and signing requirement via a raw SMB2 NEGOTIATE, detects legacy SMBv1 exposure, tests for null/guest session access, and lists shares when such a session succeeds.
 
 ## Directory Structure
 
@@ -40,48 +44,55 @@ Network Enumeration Tool/
 ├── README.md                # This documentation
 ├── src/
 │   ├── main.rs              # Application entrypoint & CLI orchestrator
-│   ├── cli.rs               # clap CLI argument definitions & parsing helpers
-│   ├── config.rs            # Profile parsing and ScanConfig builder
-│   ├── model.rs             # Scan Result and Host/Port data structures
-│   ├── capabilities.rs      # Runtime capability probe (nmap, raw sockets)
-│   ├── scope.rs             # Authorization gate + allow/deny scope policy
-│   ├── banner.rs            # Native TCP banner grabbing + content-based signature identification
-│   ├── udp_identify.rs      # Native UDP service identification (DNS/NTP/SNMP structural validation)
+│   ├── cli.rs                # clap CLI argument definitions & parsing helpers
+│   ├── config.rs             # Profile parsing and ScanConfig builder
+│   ├── model.rs              # Scan result, Host/Port, and Finding data structures
+│   ├── capabilities.rs       # Runtime capability probe (nmap, raw sockets)
+│   ├── scope.rs              # Authorization gate + allow/deny scope policy
+│   ├── banner.rs             # Native TCP banner grabbing + content-based signature identification
+│   ├── udp_identify.rs       # Native UDP service identification (DNS/NTP/SNMP structural validation)
 │   ├── targets/
 │   │   ├── mod.rs
-│   │   └── resolver.rs      # DNS lookup, IP parsing, and CIDR expansion
+│   │   └── resolver.rs       # DNS lookup, IP parsing, CIDR expansion, hostname/SNI tracking
 │   ├── discovery/
-│   │   ├── mod.rs           # ICMP and TCP ping sweeps with progress bars
-│   │   └── arp.rs           # Raw ARP request/reply host discovery for local subnets
+│   │   ├── mod.rs            # ICMP and TCP ping sweeps with progress bars
+│   │   └── arp.rs            # Raw ARP request/reply host discovery for local subnets
 │   ├── scanners/
-│   │   ├── mod.rs           # PortScanner trait
-│   │   ├── connect.rs       # TCP Connect scanner implementation
-│   │   ├── syn.rs           # Raw TCP SYN scanner implementation
-│   │   └── udp.rs           # UDP datagram scanner implementation
+│   │   ├── mod.rs            # PortScanner trait
+│   │   ├── connect.rs        # TCP Connect scanner implementation
+│   │   ├── syn.rs            # Raw TCP SYN scanner implementation
+│   │   └── udp.rs            # UDP datagram scanner implementation
+│   ├── enumeration/
+│   │   ├── mod.rs
+│   │   ├── dns.rs             # DNS record enumeration, reverse DNS, AXFR zone transfer probe
+│   │   ├── http.rs            # HTTP title/header fingerprinting
+│   │   ├── tls.rs             # TLS certificate inspection
+│   │   ├── ftp.rs             # FTP banner capture + anonymous login check
+│   │   ├── snmp.rs            # SNMP community string check, sysDescr/sysName, interface walk
+│   │   └── smb.rs             # SMB dialect/signing, SMBv1, null session, share enumeration
 │   ├── nmap/
-│   │   ├── mod.rs           # Subprocess execution and XML result merging
-│   │   ├── command.rs       # Dynamic argument building & targeted NSE selection
-│   │   └── xml.rs           # Deserialization structures for Nmap XML output
+│   │   ├── mod.rs            # Subprocess execution and XML result merging
+│   │   ├── command.rs        # Dynamic argument building & targeted NSE selection
+│   │   └── xml.rs            # Deserialization structures for Nmap XML output
 │   ├── scripting/
-│   │   └── mod.rs           # Embedded Lua scripting engine (mlua)
+│   │   └── mod.rs            # Embedded Lua scripting engine (mlua)
 │   └── report/
 │       ├── mod.rs
-│       └── json.rs          # JSON report serializer
+│       └── json.rs           # JSON report serializer
 ├── plugins/                 # Custom native Lua scripts/plugins
 │   └── http-title.lua       # Native HTTP page title extractor (raw banner grabbing is now handled natively for every port; see src/banner.rs)
 └── NSE/
     └── etcd-info.nse        # Custom Nmap script targeting unauthenticated etcd
 ```
 
----
-
 ## Getting Started
 
 ### Prerequisites
 
-Ensure you have Rust and Cargo installed (MSRV 1.75+):
+Ensure you have Rust and Cargo installed. The core scanner builds fine on older toolchains, but the SMB enumeration module (`--smb`) pulls in a dependency requiring **rustc 1.89+**:
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+source "$HOME/.cargo/env"
 ```
 
 To enable full enrichment features, install Nmap:
@@ -112,8 +123,6 @@ sudo dnf install nmap
 ```bash
 alias netenum="netenum --custom-nse-dir '/path/to/netenum/NSE' --custom-lua-dir '/path/to/netenum/plugins'"
 ```
-
----
 
 ## Usage Examples
 
@@ -234,7 +243,41 @@ Allow/deny lists can also be loaded from files (one IP/CIDR per line, `#` commen
 cargo run -- 10.0.0.0/24 --allow-file scope-allow.txt --deny-file scope-deny.txt --i-have-authorization
 ```
 
----
+### 17. DNS Enumeration
+Resolve A/AAAA/CNAME/NS/MX/TXT records, attempt a reverse lookup, and probe every discovered nameserver for an unauthenticated zone transfer. Only applies to hostname-form targets (not raw IPs/CIDRs):
+```bash
+cargo run -- example.com --dns --i-have-authorization
+```
+
+### 18. HTTP Fingerprinting
+Fetch every HTTP-identified port fresh and extract the page title plus any tech-revealing headers (`Server`, `X-Powered-By`, etc):
+```bash
+cargo run -- 10.0.0.1 -p 80,443,8080 --http --i-have-authorization
+```
+
+### 19. TLS Certificate Inspection
+Inspect the certificate presented on any TLS-looking port — issuer, subject, SAN, and expiry — flagging expired certificates as high severity:
+```bash
+cargo run -- example.com -p 443 --tls --i-have-authorization
+```
+
+### 20. FTP Enumeration
+Capture the FTP banner and test for anonymous login access:
+```bash
+cargo run -- 10.0.0.1 -p 21 --ftp --i-have-authorization
+```
+
+### 21. SNMP Enumeration
+Test default community strings and, if one works, gather `sysDescr`/`sysName` and the interface table:
+```bash
+cargo run -- 10.0.0.1 -p 161 --udp --snmp --i-have-authorization
+```
+
+### 22. SMB Enumeration
+Report SMB dialect and signing requirement, detect SMBv1 exposure, test for null/guest session access, and list shares if accessible:
+```bash
+cargo run -- 10.0.0.1 -p 445 --smb --i-have-authorization
+```
 
 ## Scope & Authorization Guardrails
 
@@ -252,8 +295,6 @@ real hosts. To reduce the chance of it being pointed at something out of scope b
 - If every resolved target ends up out of scope, netenum exits with an error rather than
   silently scanning nothing.
 
----
-
 ## Custom Script: `etcd-info.nse`
 
 The toolkit includes a custom NSE script `NSE/etcd-info.nse` designed to query etcd client ports (`2379`):
@@ -261,3 +302,10 @@ The toolkit includes a custom NSE script `NSE/etcd-info.nse` designed to query e
 - It extracts the server and cluster versions, node role (leader vs. follower), and node name.
 - It detects and reports public exposure of unauthenticated Prometheus metrics.
 - When run under version detection (`-sV`), it enriches the Nmap service signature automatically.
+
+## Acknowledgments
+
+This project is a personal learning project. Its direction, architecture, and feature roadmap
+were my own design, refined iteratively across each version into what exists today. AI (Claude)
+was used as a coding assistant throughout development — to speed up implementation, research
+third-party crate APIs, and validate protocol-level code against real test servers.
