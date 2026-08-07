@@ -297,6 +297,20 @@ async fn main() {
         summary.findings.extend(ftp_findings);
     }
 
+    // 8.9 SNMP enumeration, opt-in via --snmp. Runs against every open UDP
+    // port that looks like SNMP, regardless of how the target was given.
+    if cli.snmp {
+        println!("\n[*] Running SNMP enumeration...");
+        let mut snmp_findings = Vec::new();
+        for host in &summary.hosts {
+            if host.status == model::HostStatus::Up {
+                snmp_findings.extend(enumeration::snmp::enumerate_host(host, scan_config.timeout_ms).await);
+            }
+        }
+        println!("[+] SNMP enumeration complete ({} finding(s)).", snmp_findings.len());
+        summary.findings.extend(snmp_findings);
+    }
+
     // 9. Print summary
     println!("\n[*] Scan completed in {}ms", summary.duration_ms);
     println!("[*] Hosts up: {} / {}", summary.hosts_up, summary.targets_scanned);

@@ -110,6 +110,11 @@ pub struct Cli {
     /// every open port identified as FTP (port 21 or a matching service name).
     #[arg(long = "ftp")]
     pub ftp: bool,
+
+    /// Run SNMP enumeration (default community string check, sysDescr/sysName,
+    /// interface table walk) against every open UDP port identified as SNMP.
+    #[arg(long = "snmp")]
+    pub snmp: bool,
 }
 
 /// Parses a port string which can contain comma-separated values and ranges (e.g. "22,80,443,1000-2000")
